@@ -1,0 +1,506 @@
+report 50010 "GXL ImportItemJnlFromExcel"
+{
+    // 001  19.03.2022  KDU  BAU LCB-6 New column Reason Code has been added.
+    // 001  03.04.2022  KDU  BAU LCB-6 Adjusting Quantity to be positive and entry type based on the quantity
+    UsageCategory = Tasks;
+    ApplicationArea = All;
+    ProcessingOnly = true;
+    Caption = 'Import Item Journal from Excel';
+
+
+    dataset
+    {
+    }
+
+    requestpage
+    {
+        SaveValues = true;
+        layout
+        {
+            area(Content)
+            {
+                group(ImportOptions)
+                {
+                    Caption = 'Import Options';
+                    field(FirstDataRowNoCtrl; FirstDataRowNo)
+                    {
+                        Caption = 'First Data Row No.';
+                        ToolTip = 'Specifies the starting row number in the spreadsheet to be imported from';
+                        ApplicationArea = All;
+                        MinValue = 1;
+                    }
+                    field(DocNoCtrl; DocNo)
+                    {
+                        Caption = 'Document No.';
+                        ApplicationArea = All;
+                        ShowMandatory = true;
+                    }
+                    field(PostingDateCtrl; PostingDate)
+                    {
+                        Caption = 'Posting Date';
+                        ApplicationArea = All;
+                        ShowMandatory = true;
+                    }
+                    field(LocCodeCtrl; LocCode)
+                    {
+                        Caption = 'Location Code';
+                        ApplicationArea = All;
+                        ShowMandatory = true;
+                        TableRelation = Location;
+                    }
+                    field(GenProdPostGrpCtrl; GenProdPostGrpCode)
+                    {
+                        Caption = 'Gen. Prod. Posting Group';
+                        ApplicationArea = All;
+                        ShowMandatory = true;
+                        TableRelation = "Gen. Product Posting Group";
+                    }
+                    field(Dim2CodeCtrl; Dim2Code)
+                    {
+                        Caption = 'Shortcut Dimension 2 Code';
+                        CaptionClass = '1,2,2';
+                        ApplicationArea = All;
+                        ShowMandatory = true;
+                        TableRelation = "Dimension Value".Code where("Global Dimension No." = const(2));
+                    }
+                    // >> 001
+                    field(ReasonCodeCtrl; ReasonCode)
+                    {
+                        Caption = 'Reason Code';
+                        ApplicationArea = All;
+                        TableRelation = "Reason Code";
+                    }
+                    // << 001
+
+                }
+                group(ExcelImportTemplate)
+                {
+                    Caption = 'Excel Export Template';
+
+                    field(ExportCtrl; ExportTemplate)
+                    {
+                        Caption = 'Export';
+                        ToolTip = 'Export the excel template to be used for importing';
+                        ApplicationArea = All;
+                        ShowCaption = false;
+                        trigger OnDrillDown()
+                        begin
+                            ExportExcelTemplate();
+                        end;
+                    }
+                    field(ShowDimCodeOnExportCtrl; ShowDimCodeOnExport)
+                    {
+                        Caption = 'Show Company Dim. Code Captions';
+                        ToolTip = 'Specifies the company dimension caption will be used in the import file';
+                        ApplicationArea = All;
+                        Visible = false;
+                    }
+                }
+            }
+        }
+
+        trigger OnOpenPage()
+        begin
+            if FirstDataRowNo <= 0 then
+                FirstDataRowNo := 2;
+            DocNo := '';
+            PostingDate := 0D;
+            LocCode := '';
+            Dim2Code := '';
+            if GenProdPostGrpCode = '' then
+                GenProdPostGrpCode := 'OPENBAL';
+            if not GenProdPostGroup.Get(GenProdPostGrpCode) then
+                GenProdPostGrpCode := '';
+        end;
+
+        trigger OnQueryClosePage(CloseAction: Action): Boolean
+        var
+            ExcelBuf: Record "Excel Buffer" temporary;
+        begin
+            if CloseAction = Action::OK then begin
+                ServerFileName := '';
+                UploadIntoStream('Import excel file', '', 'Excel files (*.xlsx)|*.xlsx', ServerFileName, InS);
+                if (ServerFileName = '') then
+                    exit(false);
+                SheetName := ExcelBuf.SelectSheetsNameStream(InS);
+                if (SheetName = '') then
+                    exit(false);
+                exit(true);
+            end;
+        end;
+
+    }
+
+    trigger OnPreReport()
+    begin
+        GLSetup.Get();
+        if DocNo = '' then
+            Error('You must enter Document No.');
+        if PostingDate = 0D then
+            Error('You must enter Posting Date');
+        if LocCode = '' then
+            Error('You must enter Location Code');
+        if Dim2Code = '' then
+            Error('You must enter %1', GLSetup."Global Dimension 2 Code");
+
+        GLSetupShortcutDimCode[1] := GLSetup."Shortcut Dimension 1 Code";
+        GLSetupShortcutDimCode[2] := GLSetup."Shortcut Dimension 2 Code";
+        GLSetupShortcutDimCode[3] := GLSetup."Shortcut Dimension 3 Code";
+        GLSetupShortcutDimCode[4] := GLSetup."Shortcut Dimension 4 Code";
+        GLSetupShortcutDimCode[5] := GLSetup."Shortcut Dimension 5 Code";
+        GLSetupShortcutDimCode[6] := GLSetup."Shortcut Dimension 6 Code";
+        GLSetupShortcutDimCode[7] := GLSetup."Shortcut Dimension 7 Code";
+        GLSetupShortcutDimCode[8] := GLSetup."Shortcut Dimension 8 Code";
+
+
+        ImportItemJnlBuffers();
+    end;
+
+    trigger OnPostReport()
+    var
+    begin
+        Commit();
+        Message('%1 Item Journal Line(s) inserted', NoOfLinesImported);
+    end;
+
+    local procedure ImportItemJnlBuffers()
+    var
+        TempXLBuf: Record "Excel Buffer" temporary;
+        TempItemJnlBuffer: Record "GXL Item Journal Buffer" temporary;
+        Window: Dialog;
+        TotalRecNo: Integer;
+        RecNo: Integer;
+        ShortcutDimCode: ARRAY[8] of Code[20];
+        CellValue: Text;
+        CellID: Text;
+        PrevRowNo: Integer;
+    begin
+        if FirstDataRowNo <= 0 then
+            Error('You must specify the first data row no.');
+
+        InitColumnFieldMapping(true, TempXLBuf);
+
+        TempXLBuf.OpenBookStream(InS, SheetName);
+        TempXLBuf.ReadSheet();
+        Window.OPEN('Item Journal Import...\\Progress @1@@@@@@@@@@@@@@@@@@@@@@@@@');
+        Window.UPDATE(1, 0);
+        TotalRecNo := TempXLBuf.Count();
+        RecNo := 0;
+        NoOfLinesImported := 0;
+        PendingTempLineToInsert := false;
+
+
+        TempXLBuf.SetFilter("Row No.", '>=%1', FirstDataRowNo);
+        if TempXLBuf.Find('-') then begin
+            BatchID := InsertItemJnlBufferBatch();
+            repeat
+                RecNo := RecNo + 1;
+                if (TempXLBuf."Row No." > PrevRowNo) then
+                    Window.UPDATE(1, ROUND(RecNo / TotalRecNo * 10000, 1));
+
+                if (TempXLBuf."Row No." > PrevRowNo) and PendingTempLineToInsert and (PrevRowNo > 0) then
+                    InsertItemJnlBuffer(TempItemJnlBuffer, ShortcutDimCode);
+
+                if ColFieldMapping.Get(TempXLBuf."Column No.") then begin
+                    CellID := StrSubstNo('%1%2', TempXLBuf.xlColID, TempXLBuf.xlRowID);
+                    CleanTheCellValue(TempXLBuf);
+                    CellValue := TempXLBuf."Cell Value as Text";
+                    if (CellValue <> '') then
+                        if not ValidateCellValue(TempXLBuf."Row No.", CellValue, ColFieldMapping."Field No.", TempItemJnlBuffer, ShortcutDimCode) then
+                            Error('Cell %1 ''%2'' : %3', CellID, ColFieldMapping."New Value", GetLastErrorText());
+
+                end;
+                PrevRowNo := TempXLBuf."Row No.";
+            until TempXLBuf.Next() = 0;
+            if PendingTempLineToInsert then
+                InsertItemJnlBuffer(TempItemJnlBuffer, ShortcutDimCode);
+        end;
+        TempXLBuf.Reset();
+        Window.Close();
+    end;
+
+    [TryFunction]
+    local procedure ValidateCellValue(RowNo: Integer; CellValue: Text; ColFieldNo: Integer; var TempItemJnlBuffer: Record "GXL Item Journal Buffer" temporary; var ShortcutDimCode: ARRAY[8] of Code[20])
+    var
+        DateVar: Date;
+        DecVar: Decimal;
+    begin
+        PendingTempLineToInsert := true;
+        RowFieldWithValue.Init();
+        RowFieldWithValue.Number := ColFieldNo;
+        RowFieldWithValue.Insert();
+        TempItemJnlBuffer."Line No." := RowNo;
+        case ColFieldNo of
+            TempItemJnlBuffer.FieldNo("Posting Date"):
+                begin
+                    Evaluate(DateVar, CellValue);
+                    TempItemJnlBuffer."Posting Date" := DateVar;
+                end;
+            TempItemJnlBuffer.FieldNo("Entry Type"):
+                begin
+                    Evaluate(TempItemJnlBuffer."Entry Type", CellValue);
+                end;
+            TempItemJnlBuffer.FieldNo("Document No."):
+                begin
+                    TempItemJnlBuffer."Document No." := CellValue;
+                end;
+            TempItemJnlBuffer.FieldNo("Legacy Item No."):
+                begin
+                    TempItemJnlBuffer."Legacy Item No." := CellValue;
+                end;
+            TempItemJnlBuffer.FieldNo(Description):
+                TempItemJnlBuffer.Description := COPYSTR(CellValue, 1, MAXStrLen(TempItemJnlBuffer.Description));
+            TempItemJnlBuffer.FieldNo(Quantity):
+                begin
+                    Evaluate(DecVar, CellValue);
+                    if (DecVar <> ROUND(DecVar, 0.00001)) then
+                        Error('Max. 5 decimals allowed');
+                    TempItemJnlBuffer.Quantity := DecVar;
+                end;
+            TempItemJnlBuffer.FieldNo("Unit Cost"):
+                begin
+                    Evaluate(DecVar, CellValue);
+                    if (DecVar <> ROUND(DecVar, GLSetup."Unit-Amount Rounding Precision")) then
+                        Error('No. of decimals exceed the %1 in %2', GLSetup.FieldCaption("Unit-Amount Rounding Precision"), GLSetup.TableCaption());
+                    TempItemJnlBuffer."Unit Cost" := DecVar;
+                end;
+            TempItemJnlBuffer.FieldNo("Unit Amount"):
+                begin
+                    Evaluate(DecVar, CellValue);
+                    if (DecVar <> ROUND(DecVar, GLSetup."Unit-Amount Rounding Precision")) then
+                        Error('No. of decimals exceed the %1 in %2', GLSetup.FieldCaption("Unit-Amount Rounding Precision"), GLSetup.TableCaption());
+                    TempItemJnlBuffer."Unit Amount" := DecVar;
+                end;
+            TempItemJnlBuffer.FieldNo(Amount):
+                begin
+                    Evaluate(DecVar, CellValue);
+                    if (DecVar <> ROUND(DecVar, GLSetup."Amount Rounding Precision")) then
+                        Error('No. of decimals exceed the %1 in %2', GLSetup.FieldCaption("Amount Rounding Precision"), GLSetup.TableCaption());
+                    TempItemJnlBuffer."Unit Amount" := DecVar;
+                end;
+            TempItemJnlBuffer.FieldNo("Location Code"):
+                begin
+                    Location.Get(CellValue);
+                    Location.TestField("Use As In-Transit", false);
+                    TempItemJnlBuffer."Location Code" := CellValue;
+                end;
+            TempItemJnlBuffer.FieldNo("Source Code"):
+                begin
+                    TempItemJnlBuffer."Source Code" := CellValue;
+                end;
+            TempItemJnlBuffer.FieldNo("Gen. Prod. Posting Group"):
+                begin
+                    TempItemJnlBuffer."Gen. Prod. Posting Group" := CellValue;
+                end;
+            TempItemJnlBuffer.FieldNo("Document Date"):
+                begin
+                    Evaluate(DateVar, CellValue);
+                    TempItemJnlBuffer."Document Date" := DateVar;
+                end;
+            else
+                if (ColFieldNo < 0) then begin
+                    //Dim columns are negative
+                    ColFieldNo := -ColFieldNo;
+                    if StrLen(CellValue) > MAXStrLen(TempItemJnlBuffer."Shortcut Dimension 1 Code") then
+                        Error('The cell contains more than max. %1 characters', MAXStrLen(TempItemJnlBuffer."Shortcut Dimension 1 Code"));
+                    if GLSetupShortcutDimCode[ColFieldNo] = '' then
+                        Error('Shortcut Dimension %1 is not defined in the %2', ColFieldNo, GLSetup.TABLECAPTION());
+                    DimensionMgt.CheckDimValue(GLSetupShortcutDimCode[ColFieldNo], CellValue);
+                    ShortcutDimCode[ColFieldNo] := CellValue;
+                end;
+
+        end;
+    end;
+
+    [TryFunction]
+    local procedure CheckOnInsertItemJnlBuffer(var TempItemJnlBuffer: Record "GXL Item Journal Buffer" temporary; var ShortcutDimCode: ARRAY[8] of Code[20])
+    begin
+    end;
+
+    local procedure InsertItemJnlBuffer(var TempItemJnlBuffer: Record "GXL Item Journal Buffer" temporary; var ShortcutDimCode: ARRAY[8] of Code[20])
+    var
+        DimNo: Integer;
+    begin
+        if not CheckOnInsertItemJnlBuffer(TempItemJnlBuffer, ShortcutDimCode) then
+            Error('Row %1 : %2', TempItemJnlBuffer."Line No.", GetLastErrorText());
+
+        NextLineNo := NextLineNo + 10000;
+        ItemJnlBuffer.Init();
+        ItemJnlBuffer.TransferFields(TempItemJnlBuffer);
+        ItemJnlBuffer."Batch ID" := BatchID;
+        ItemJnlBuffer."Line No." := ItemJnlBuffer."Line No.";
+
+        for DimNo := 1 to 8 do
+            if ShortcutDimCode[DimNo] <> '' then
+                case DimNo of
+                    1:
+                        ItemJnlBuffer."Shortcut Dimension 1 Code" := ShortcutDimCode[DimNo];
+                    2:
+                        ItemJnlBuffer."Shortcut Dimension 2 Code" := ShortcutDimCode[DimNo];
+                    3:
+                        ItemJnlBuffer."Shortcut Dimension 3 Code" := ShortcutDimCode[DimNo];
+                    4:
+                        ItemJnlBuffer."Shortcut Dimension 4 Code" := ShortcutDimCode[DimNo];
+                    5:
+                        ItemJnlBuffer."Shortcut Dimension 5 Code" := ShortcutDimCode[DimNo];
+                    6:
+                        ItemJnlBuffer."Shortcut Dimension 6 Code" := ShortcutDimCode[DimNo];
+                    7:
+                        ItemJnlBuffer."Shortcut Dimension 7 Code" := ShortcutDimCode[DimNo];
+                    8:
+                        ItemJnlBuffer."Shortcut Dimension 8 Code" := ShortcutDimCode[DimNo];
+                end;
+
+        // >> 001
+        //"Entry Type" := "Entry Type"::"Positive Adjmt.";
+        if ItemJnlBuffer.Quantity > 0 then
+            ItemJnlBuffer."Entry Type" := ItemJnlBuffer."Entry Type"::"Positive Adjmt."
+        else
+            if ItemJnlBuffer.Quantity < 0 then
+                ItemJnlBuffer."Entry Type" := ItemJnlBuffer."Entry Type"::"Negative Adjmt.";
+        ItemJnlBuffer.Quantity := Abs(ItemJnlBuffer.Quantity);
+        ItemJnlBuffer."Reason Code" := ReasonCode;
+        // << 001
+        ItemJnlBuffer."Document No." := DocNo;
+        ItemJnlBuffer."Posting Date" := PostingDate;
+        ItemJnlBuffer."Location Code" := LocCode;
+        ItemJnlBuffer."Shortcut Dimension 2 Code" := Dim2Code;
+        ItemJnlBuffer."Gen. Prod. Posting Group" := GenProdPostGrpCode;
+        ItemJnlBuffer.Insert(true);
+
+        NoOfLinesImported := NoOfLinesImported + 1;
+        PendingTempLineToInsert := false;
+        Clear(TempItemJnlBuffer);
+        Clear(ShortcutDimCode);
+        RowFieldWithValue.DeleteAll();
+    end;
+
+    local procedure CleanTheCellValue(var TempXLBuf: Record "Excel Buffer" temporary)
+    var
+        i: Integer;
+        NewCellValueTxt: Text;
+    begin
+        TempXLBuf."Cell Value as Text" := DelChr(TempXLBuf."Cell Value as Text", '<>', ' ');
+        if (TempXLBuf."Cell Value as Text" = '') then
+            EXIT;
+        for i := 1 to StrLen(TempXLBuf."Cell Value as Text") do
+            if TempXLBuf."Cell Value as Text"[i] >= 32 then // Skip tab, crlf etc.
+                NewCellValueTxt := NewCellValueTxt + COPYSTR(TempXLBuf."Cell Value as Text", i, 1);
+
+        TempXLBuf."Cell Value as Text" := NewCellValueTxt;
+    end;
+
+    local procedure ExportExcelTemplate()
+    var
+        TempXLBuf: Record "Excel Buffer" temporary;
+        TempXLBuf2: Record "Excel Buffer" temporary;
+    begin
+        InitColumnFieldMapping(ShowDimCodeOnExport, TempXLBuf);
+        ColFieldMapping.FindSet();
+        repeat
+            TempXLBuf.Init();
+            TempXLBuf.Validate("Row No.", 1);
+            TempXLBuf.Validate("Column No.", ColFieldMapping."Entry No.");
+            TempXLBuf."Cell Value as Text" := ColFieldMapping."New Value";
+            TempXLBuf.Comment := ColFieldMapping."Old Value";
+            TempXLBuf.Bold := true;
+            TempXLBuf."Cell Type" := TempXLBuf."Cell Type"::Text;
+            TempXLBuf.Insert();
+            TempXLBuf2 := TempXLBuf;
+            TempXLBuf2.Insert();
+        until ColFieldMapping.Next() = 0;
+
+        TempXLBuf.NewRow();
+        TempXLBuf.AddInfoColumn('Column', false, true, false, false, '', TempXLBuf."Cell Type"::Text);
+        TempXLBuf.AddInfoColumn('Field Name', false, true, false, false, '', TempXLBuf."Cell Type"::Text);
+        TempXLBuf.AddInfoColumn('Notes', false, true, false, false, '', TempXLBuf."Cell Type"::Text);
+        TempXLBuf2.FindSet();
+        repeat
+            TempXLBuf.NewRow();
+            TempXLBuf.AddInfoColumn(TempXLBuf2.xlColID, false, false, false, false, '', TempXLBuf."Cell Type"::Text);
+            TempXLBuf.AddInfoColumn(TempXLBuf2."Cell Value as Text", false, false, false, false, '', TempXLBuf."Cell Type"::Text);
+            TempXLBuf.AddInfoColumn(TempXLBuf2.Comment, false, false, false, false, '', TempXLBuf."Cell Type"::Text);
+        until TempXLBuf2.Next() = 0;
+
+        TempXLBuf.CreateNewBook('Item Journal');
+        TempXLBuf.SetUseInfoSheet();
+        TempXLBuf.WriteSheet('Item Journal', 'Import Template', '');
+        TempXLBuf.CloseBook();
+        TempXLBuf.OpenExcel();
+    end;
+
+    local procedure InitColumnFieldMapping(ShowDimCodeCaptions: Boolean; var TempXLBuf: Record "Excel Buffer" temporary)
+    var
+        ItemJnlBuffer2: Record "GXL Item Journal Buffer";
+        i: Integer;
+    begin
+        Clear(TempXLBuf);
+        TempXLBuf.DeleteAll();
+        Clear(ColFieldMapping);
+        ColFieldMapping.DeleteAll();
+        i := 0;
+        i += 1;
+        SetColFieldMapping(i, ItemJnlBuffer2.FieldNo("Legacy Item No."), ItemJnlBuffer2.FieldCaption("Legacy Item No."), 'Mandatory');
+        i += 1;
+        SetColFieldMapping(i, ItemJnlBuffer2.FieldNo(Quantity), ItemJnlBuffer2.FieldCaption(Quantity), 'Mandatory');
+
+    end;
+
+    local procedure SetColFieldMapping(ColNo: Integer; TheFieldNo: Integer; TheFieldCaption: Text; TheFieldDescription: Text)
+    begin
+        Clear(ColFieldMapping);
+        ColFieldMapping."Entry No." := ColNo;
+        ColFieldMapping."Field No." := TheFieldNo;
+        ColFieldMapping."New Value" := TheFieldCaption;
+        ColFieldMapping."Old Value" := TheFieldDescription;
+        ColFieldMapping.Insert();
+    end;
+
+    local procedure InsertItemJnlBufferBatch(): Integer
+    var
+        ItemJnlBuffBatch: Record "GXL Item Jnl. Buffer Batch";
+        LastBatchID: Integer;
+    begin
+        ItemJnlBuffBatch.Reset();
+        if ItemJnlBuffBatch.FindLast() then
+            LastBatchID := ItemJnlBuffBatch."Batch ID";
+        LastBatchID := LastBatchID + 1;
+        ItemJnlBuffBatch.Init();
+        ItemJnlBuffBatch."Batch ID" := LastBatchID;
+        ItemJnlBuffBatch."Imported Date Time" := CurrentDateTime();
+        ItemJnlBuffBatch."Imported by User ID" := UserId();
+        // >> 001
+        ItemJnlBuffBatch."Reason Code" := ReasonCode;
+        // << 001
+        ItemJnlBuffBatch.Insert(true);
+        exit(ItemJnlBuffBatch."Batch ID");
+    end;
+
+    var
+        GLSetup: Record "General Ledger Setup";
+        ColFieldMapping: Record "Change Log Entry" temporary;
+        RowFieldWithValue: Record "Integer" temporary;
+        ItemJnlBuffer: Record "GXL Item Journal Buffer";
+        Location: Record Location;
+        GenProdPostGroup: Record "Gen. Product Posting Group";
+        DimensionMgt: Codeunit DimensionManagement;
+        InS: InStream;
+        NextLineNo: Integer;
+        ShowDimCodeOnExport: Boolean;
+        ServerFileName: Text;
+        SheetName: Text;
+        GLSetupShortcutDimCode: array[8] of Code[20];
+        FirstDataRowNo: Integer;
+        PendingTempLineToInsert: Boolean;
+        NoOfLinesImported: Integer;
+        ExportTemplate: Text;
+        BatchID: Integer;
+        DocNo: Code[20];
+        PostingDate: Date;
+        LocCode: Code[10];
+        Dim2Code: Code[20];
+        GenProdPostGrpCode: Code[20];
+        // >> 001
+        ReasonCode: Code[10];
+    // << 001
+}

@@ -1,0 +1,10 @@
+{
+    //"al.enableCodeAnalysis": true,
+    "al.ruleSetPath": "./.vscode/Custom.ruleset.json",
+    "al.codeAnalyzers": ["${CodeCop}","${UICop}"],
+    "CRS.ObjectNamePrefix": "GXL ",
+    "CRS.RemovePrefixFromFilename": true,
+    "CRS.FileNamePattern": "<ObjectNameShort>.<ObjectType>.al",
+    "CRS.FileNamePatternExtensions": "<ObjectNameShort>.<ObjectType>.al",
+    "CRS.DisableCRSSnippets": true,
+}

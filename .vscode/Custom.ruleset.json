@@ -1,0 +1,69 @@
+{
+    "name": "Custom ruleset",
+    "rules": [
+        {
+            "id": "AA0001",
+            "action": "None",
+            "justification": "This diagnostic can be ignored"
+        },
+        {
+            "id": "AA0005",
+            "action": "None",
+            "justification": "This diagnostic can be ignored"
+        },
+        {
+            "id": "AA0072",
+            "action": "None",
+            "justification": "This diagnostic can be ignored"
+        },
+        {
+            "id": "AA0137",
+            "action": "Info",
+            "justification": "For this project, this diagnostic should be informational."
+        },
+        {
+            "id": "AA0139",
+            "action": "Info",
+            "justification": "For this project, this diagnostic should be informational."
+        },
+        {
+            "id": "AA0214",
+            "action": "None",
+            "justification": "This diagnostic can be ignored"
+        }
+        ,
+        {
+            "id": "AA0215",
+            "action": "None",
+            "justification": "This diagnostic can be ignored"
+        }
+        ,
+        {
+            "id": "AA0217",
+            "action": "None",
+            "justification": "This diagnostic can be ignored"
+        }
+        ,
+        {
+            "id": "AA0218",
+            "action": "None",
+            "justification": "This diagnostic can be ignored"
+        },
+        {
+            "id": "AA0231",
+            "action": "None",
+            "justification": "This diagnostic can be ignored"
+        },
+        {
+            "id": "AA0470",
+            "action": "None",
+            "justification": "This diagnostic can be ignored"
+        }
+        ,
+        {
+            "id": "AL0603",
+            "action": "Hidden",
+            "justification": "This diagnostic can be ignored"
+        }        
+    ]
+}
