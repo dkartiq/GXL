@@ -1,0 +1,60 @@
+{
+  "id": "d771cbcc-cb14-47e5-84e3-f23d62a17cb0",
+  "name": "GXL Greencross",
+  "publisher": "Work Made Simple",
+  "brief": "",
+  "description": "HP2281,GX202329,LCB-409,LCB-522,LCB-463,LCB-524,LCB-298,HP-2346,LCB-203,LCB-291,HP-2408,HP-2134,Gatein,HP-2914,LCB-258,LCB-503,LCB-505,LCB-504,LCB-340,LCB-726,LCB-203,LCB-797,LCB-780,LCB-799,LCB-834,LCB-507",
+  "version": "2.0.0.321",
+  "privacyStatement": "",
+  "EULA": "https://www.wms-spl.com.au",
+  "help": "https://www.wms-spl.com.au",
+  "url": "https://www.wms-spl.com.au",
+  "dependencies": [
+    {
+      "id": "5ecfc871-5d82-43f1-9c54-59685e82318d",
+      "name": "LS Central WMS",
+      "publisher": "LS Retail WMS",
+      "version": "22.1.33.2"
+    },
+    {
+      "id": "2a0547fa-f60f-401d-b1fe-c7c4be8fb230",
+      "name": "LS Central System App",
+      "publisher": "LS Retail",
+      "version": "22.1.0.1000596"
+    },
+    {
+      "id": "68e13fa3-217a-4be0-9141-99e5bf0ca818",
+      "name": "Email - SMTP Connector",
+      "publisher": "Microsoft",
+      "version": "22.1.55890.56216"
+    },
+    {
+      "id": "ccfddfce-3ad5-499a-807d-dbda7f69fd86",
+      "name": "GXL System App",
+      "publisher": "Work Made Simple",
+      "version": "1.0.0.8"
+    },    
+    {
+      "id": "a53707ce-b9e1-4f4e-93be-ea3aae783cae",
+      "name": "ExFlow - Accounts Payable Automation",
+      "publisher": "SignUp Software AB",
+      "version": "22.0.274.19"
+    }
+  ],
+  "features": ["TranslationFile", "NoImplicitWith"],
+  "platform": "22.0.0.0",
+  "application": "22.0.0.0",
+  "idRanges": [
+    {
+      "from": 50000,
+      "to": 10016980
+    }
+  ],
+  "resourceExposurePolicy": {
+    "allowDebugging": true,
+    "allowDownloadingSource": true,
+    "includeSourceInSymbolFile": true
+  },
+  "runtime": "11.0",
+  "target": "OnPrem"
+}
